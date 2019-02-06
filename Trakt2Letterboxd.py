@@ -1,10 +1,11 @@
 """ Trakt2Letterboxd """
 
-from urllib2 import Request, urlopen, HTTPError
+from urllib.request import Request, urlopen, HTTPError
 import json
 import time
 import csv
 import os.path
+
 
 class TraktImporter(object):
     """ Trakt Importer """
@@ -57,10 +58,10 @@ class TraktImporter(object):
         """ Generates a device code for authentication within Trakt. """
 
         request_body = """{{"client_id": "{0}"}}""".format(self.api_clid)
+        request_body = request_body.encode('utf-8')
         request_headers = {
             'Content-Type': 'application/json'
         }
-
         request = Request(self.api_root + '/oauth/device/code',
                           data=request_body,
                           headers=request_headers)
@@ -73,8 +74,8 @@ class TraktImporter(object):
         message = ("\nGo to {0} on your web browser and enter the below user code there:\n\n"
                    "{1}\n\nAfter you have authenticated and given permission;"
                    "come back here to continue.\n"
-                  ).format(details['verification_url'], details['user_code'])
-        print message
+                   ).format(details['verification_url'], details['user_code'])
+        print(message)
 
     def __poll_for_auth(self, device_code, interval, expiry):
         """ Polls for authorization token """
@@ -87,7 +88,7 @@ class TraktImporter(object):
                              "client_id":     "{1}",
                              "client_secret": "{2}" }}
                        """.format(device_code, self.api_clid, self.api_clsc)
-
+        request_body = request_body.encode('utf-8')
         request = Request(self.api_root + '/oauth/device/token',
                           data=request_body,
                           headers=request_headers)
@@ -95,7 +96,7 @@ class TraktImporter(object):
         response_body = ""
         should_stop = False
 
-        print "Waiting for authorization.",
+        print("Waiting for authorization.", end=',')
 
         while not should_stop:
             time.sleep(interval)
@@ -105,9 +106,10 @@ class TraktImporter(object):
                 should_stop = True
             except HTTPError as err:
                 if err.code == 400:
-                    print ".",
+                    print(".", end=',')
                 else:
-                    print "\n{0} : Authorization failed, please try again. Script will now quit.".format(err.code)
+                    print("\n{0} : Authorization failed, please try again. Script will now quit.".format(
+                        err.code))
                     should_stop = True
 
             should_stop = should_stop or (time.time() > expiry)
@@ -115,9 +117,9 @@ class TraktImporter(object):
         if response_body:
             response_dict = json.loads(response_body)
             if response_dict and 'access_token' in response_dict:
-                print "Authenticated!"
+                print("Authenticated!")
                 self.api_token = response_dict['access_token']
-                print "Token:" + self.api_token
+                print("Token:" + self.api_token)
                 return True
 
         # Errored.
@@ -125,7 +127,7 @@ class TraktImporter(object):
 
     def get_movie_list(self, list_name):
         """ Get movie list of the user. """
-        print "Getting " + list_name
+        print("Getting " + list_name)
         headers = {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + self.api_token,
@@ -142,19 +144,22 @@ class TraktImporter(object):
                               headers=headers)
             try:
                 response = urlopen(request)
-
-                page_limit = int(response.info().getheader('X-Pagination-Page-Count'))
-                print "Completed page {0} of {1}".format(page, page_limit)
+                info = response.info()
+                page_limit = int(info.get('X-Pagination-Page-Count'))
+                print("Completed page {0} of {1}".format(page, page_limit))
                 page = page + 1
 
                 response_body = response.read()
                 if response_body:
-                    extracted_movies.extend(self.__extract_fields(json.loads(response_body)))
+                    extracted_movies.extend(
+                        self.__extract_fields(json.loads(response_body)))
             except HTTPError as err:
                 if err.code == 401 or err.code == 403:
-                    print "Auth Token has expired."
-                    self.__delete_token_cache() # This will regenerate token on next run.
-                print "{0} An error occured. Please re-run the script".format(err.code)
+                    print("Auth Token has expired.")
+                    # This will regenerate token on next run.
+                    self.__delete_token_cache()
+                print(
+                    "{0} An error occured. Please re-run the script".format(err.code))
                 quit()
 
         return extracted_movies
@@ -167,12 +172,13 @@ class TraktImporter(object):
             'imdbID': x['movie']['ids']['imdb'],
             'Title': x['movie']['title'].encode('utf8'),
             'Year': x['movie']['year'],
-            } for x in movies]
+        } for x in movies]
+
 
 def write_csv(history, filename):
     """ Write Letterboxd format CSV """
     if history:
-        with open(filename, 'wb') as fil:
+        with open(filename, 'w') as fil:
             writer = csv.DictWriter(fil, history[0].keys())
             writer.writeheader()
             writer.writerows(history)
@@ -180,24 +186,28 @@ def write_csv(history, filename):
 
     return False
 
+
 def run():
     """Get set go!"""
 
-    print "Initializing..."
+    print("Initializing...")
 
     importer = TraktImporter()
     if importer.authenticate():
         history = importer.get_movie_list('history')
         watchlist = importer.get_movie_list('watchlist')
         if write_csv(history, "trakt-exported-history.csv"):
-            print "\nYour history has been exported and saved to the file 'trakt-exported-history.csv'."
+            print(
+                "\nYour history has been exported and saved to the file 'trakt-exported-history.csv'.")
         else:
-            print "\nEmpty results, nothing to generate."
+            print("\nEmpty results, nothing to generate.")
 
         if write_csv(watchlist, "trakt-exported-watchlist.csv"):
-            print "\nYour watchlist has been exported and saved to the file 'trakt-exported-watchlist.csv'."
+            print(
+                "\nYour watchlist has been exported and saved to the file 'trakt-exported-watchlist.csv'.")
         else:
-            print "\nEmpty results, nothing to generate."
+            print("\nEmpty results, nothing to generate.")
+
 
 if __name__ == '__main__':
     run()
