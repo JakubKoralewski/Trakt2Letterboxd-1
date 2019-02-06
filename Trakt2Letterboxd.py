@@ -59,9 +59,7 @@ class TraktImporter(object):
 
         request_body = """{{"client_id": "{0}"}}""".format(self.api_clid)
         request_body = request_body.encode('utf-8')
-        request_headers = {
-            'Content-Type': 'application/json'
-        }
+        request_headers = {'Content-Type': 'application/json'}
         request = Request(self.api_root + '/oauth/device/code',
                           data=request_body,
                           headers=request_headers)
@@ -80,9 +78,7 @@ class TraktImporter(object):
     def __poll_for_auth(self, device_code, interval, expiry):
         """ Polls for authorization token """
 
-        request_headers = {
-            'Content-Type': 'application/json'
-        }
+        request_headers = {'Content-Type': 'application/json'}
 
         request_body = """{{ "code":          "{0}",
                              "client_id":     "{1}",
@@ -108,8 +104,7 @@ class TraktImporter(object):
                 if err.code == 400:
                     print(".", end=',')
                 else:
-                    print("\n{0} : Authorization failed, please try again. Script will now quit.".format(
-                        err.code))
+                    print("\n{0} : Authorization failed, please try again. Script will now quit.".format(err.code))
                     should_stop = True
 
             should_stop = should_stop or (time.time() > expiry)
@@ -158,8 +153,7 @@ class TraktImporter(object):
                     print("Auth Token has expired.")
                     # This will regenerate token on next run.
                     self.__delete_token_cache()
-                print(
-                    "{0} An error occured. Please re-run the script".format(err.code))
+                print("{0} An error occured. Please re-run the script".format(err.code))
                 quit()
 
         return extracted_movies
@@ -197,14 +191,12 @@ def run():
         history = importer.get_movie_list('history')
         watchlist = importer.get_movie_list('watchlist')
         if write_csv(history, "trakt-exported-history.csv"):
-            print(
-                "\nYour history has been exported and saved to the file 'trakt-exported-history.csv'.")
+            print("\nYour history has been exported and saved to the file 'trakt-exported-history.csv'.")
         else:
             print("\nEmpty results, nothing to generate.")
 
         if write_csv(watchlist, "trakt-exported-watchlist.csv"):
-            print(
-                "\nYour watchlist has been exported and saved to the file 'trakt-exported-watchlist.csv'.")
+            print("\nYour watchlist has been exported and saved to the file 'trakt-exported-watchlist.csv'.")
         else:
             print("\nEmpty results, nothing to generate.")
 
