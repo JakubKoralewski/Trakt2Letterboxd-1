@@ -1,11 +1,14 @@
 """ Trakt2Letterboxd """
 
 from urllib.request import Request, urlopen, HTTPError
+import aiohttp
+import asyncio
 import json
 import time
 import csv
 import os.path
-
+import webbrowser
+import sys, select
 
 class TraktImporter(object):
     """ Trakt Importer """
@@ -69,11 +72,16 @@ class TraktImporter(object):
 
     @staticmethod
     def __show_auth_instructions(details):
-        message = ("\nGo to {0} on your web browser and enter the below user code there:\n\n"
-                   "{1}\n\nAfter you have authenticated and given permission;"
-                   "come back here to continue.\n"
-                   ).format(details['verification_url'], details['user_code'])
-        print(message)
+        url = details['verification_url']
+        print(f"\nGo to {url} on your web browser and enter the below user code there:\n\n"
+             f"{details['user_code']}\n\nAfter you have authenticated and given permission;"
+             "come back here to continue.\n")
+        stdin = input("Open browser? (y/N)")
+        if stdin.strip().lower() == "y":
+            print("Opening browser")
+            webbrowser.open(url)
+        else:
+            print("Waiting for you to authenticate")
 
     def __poll_for_auth(self, device_code, interval, expiry):
         """ Polls for authorization token """
@@ -120,9 +128,15 @@ class TraktImporter(object):
         # Errored.
         return False
 
-    def get_movie_list(self, list_name):
+    async def __get_movie(self, session: aiohttp.ClientSession, url: str, page: int, **kwargs):
+        response = await session.get(url, **kwargs)
+        pages = response.headers["X-Pagination-Page-Count"]
+        print(f"Completed {page} of {pages}")
+        return await response.json(), pages 
+
+    async def get_movie_list(self, list_name):
         """ Get movie list of the user. """
-        print("Getting " + list_name)
+        print("\nGetting " + list_name)
         headers = {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + self.api_token,
@@ -131,30 +145,26 @@ class TraktImporter(object):
         }
 
         extracted_movies = []
-        page_limit = 1
-        page = 1
-
-        while page <= page_limit:
-            request = Request(self.api_root + '/sync/' + list_name + '/movies?page={0}&limit=10'.format(page),
-                              headers=headers)
-            try:
-                response = urlopen(request)
-                info = response.info()
-                page_limit = int(info.get('X-Pagination-Page-Count'))
-                print("Completed page {0} of {1}".format(page, page_limit))
-                page = page + 1
-
-                response_body = response.read()
-                if response_body:
+        try:
+            async with aiohttp.ClientSession() as session:
+                json, pages = await self.__get_movie(session, f"{self.api_root}/sync/{list_name}/movies?page={1}&limit=10", 1,
+                                headers=headers)
+                tasks = []
+                for page in range(2, int(pages)+1):
+                    tasks.append(self.__get_movie(session, f"{self.api_root}/sync/{list_name}/movies?page={page}&limit=10", page,
+                                headers=headers))
+                for result in asyncio.as_completed(tasks):
+                    json, _pages = await result
                     extracted_movies.extend(
-                        self.__extract_fields(json.loads(response_body)))
-            except HTTPError as err:
-                if err.code == 401 or err.code == 403:
-                    print("Auth Token has expired.")
-                    # This will regenerate token on next run.
-                    self.__delete_token_cache()
-                print("{0} An error occured. Please re-run the script".format(err.code))
-                quit()
+                        self.__extract_fields(json)
+                    )
+        except HTTPError as err:
+            if err.code == 401 or err.code == 403:
+                print("Auth Token has expired.")
+                # This will regenerate token on next run.
+                self.__delete_token_cache()
+            print("{0} An error occured. Please re-run the script".format(err.code))
+            quit()
 
         return extracted_movies
 
@@ -181,15 +191,15 @@ def write_csv(history, filename):
     return False
 
 
-def run():
+async def run():
     """Get set go!"""
 
     print("Initializing...")
 
     importer = TraktImporter()
     if importer.authenticate():
-        history = importer.get_movie_list('history')
-        watchlist = importer.get_movie_list('watchlist')
+        history = await importer.get_movie_list('history')
+        watchlist = await importer.get_movie_list('watchlist')
         if write_csv(history, "trakt-exported-history.csv"):
             print("\nYour history has been exported and saved to the file 'trakt-exported-history.csv'.")
         else:
@@ -202,4 +212,5 @@ def run():
 
 
 if __name__ == '__main__':
-    run()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(run())
